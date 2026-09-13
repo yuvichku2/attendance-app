@@ -75,11 +75,11 @@ selected_tab = st.radio("ניווט", tabs, horizontal=True, label_visibility="c
 if selected_tab == "⏰ דיווח נוכחות":
     st.title("⏰ דיווח נוכחות")
     
-    # חישוב השעה הנוכחית לפי שעון ישראל
     now = datetime.now(ISRAEL_TZ)
     st.subheader(f"תאריך ושעה: {now.strftime('%d/%m/%Y %H:%M')}")
     st.divider()
 
+    # שורה 1: כניסה ויציאה
     col1, col2 = st.columns(2)
     
     with col1:
@@ -107,6 +107,38 @@ if selected_tab == "⏰ דיווח נוכחות":
             ]
             sheet.append_row(row)
             st.warning(f"נרשמה יציאה בהצלחה בשעה {now.strftime('%H:%M')}")
+
+    st.divider()
+
+    # שורה 2: חופשה ומחלה
+    st.write("### דיווחי היעדרות")
+    col3, col4 = st.columns(2)
+
+    with col3:
+        if st.button("🏖️ יום חופשה", use_container_width=True):
+            now = datetime.now(ISRAEL_TZ)
+            row = [
+                now.strftime("%Y-%m-%d"),
+                user["name"],
+                "חופשה",
+                "-",
+                now.strftime("%Y-%m-%d %H:%M:%S")
+            ]
+            sheet.append_row(row)
+            st.info("נרשם יום חופשה בהצלחה")
+
+    with col4:
+        if st.button("🤒 יום מחלה", use_container_width=True):
+            now = datetime.now(ISRAEL_TZ)
+            row = [
+                now.strftime("%Y-%m-%d"),
+                user["name"],
+                "מחלה",
+                "-",
+                now.strftime("%Y-%m-%d %H:%M:%S")
+            ]
+            sheet.append_row(row)
+            st.info("נרשם יום מחלה בהצלחה")
 
 # --- לשונית 2: דוח מנהל חודשי ---
 elif selected_tab == "📊 דוח מנהל חודשי":
