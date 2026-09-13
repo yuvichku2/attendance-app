@@ -3,8 +3,11 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 import pandas as pd
+import pytz
 
-# הגדרת עיצוב עמוד
+# הגדרת אזור זמן ישראל
+ISRAEL_TZ = pytz.timezone('Asia/Jerusalem')
+
 st.set_page_config(page_title="דיווח נוכחות עובדים", page_icon="⏰", layout="centered")
 
 # --- חיבור ל-Google Sheets ---
@@ -14,8 +17,6 @@ def get_spreadsheet():
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
-    
-    # בדיקה אם רצים בענן (Streamlit Cloud Secrets) או במחשב המקומי (credentials.json)
     if "gcp_service_account" in st.secrets:
         creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
     else:
@@ -24,21 +25,19 @@ def get_spreadsheet():
     client = gspread.authorize(creds)
     return client.open("Employee_Attendance").worksheet("Logs")
 
-# ניסיון התחברות לגיליון
 try:
     sheet = get_spreadsheet()
 except Exception as e:
     st.error(f"שגיאה בחיבור ל-Google Sheets: {e}")
     st.stop()
 
-# --- ניהול משתמשים (דוגמה בסיסית - ניתן לערוך/להרחיב) ---
+# --- ניהול משתמשים ---
 USERS = {
     "israel": {"name": "ישראל ישראלי", "pass": "1234", "role": "employee"},
     "dana": {"name": "דנה לוי", "pass": "1234", "role": "employee"},
     "admin": {"name": "מנהל מערכת", "pass": "admin123", "role": "admin"}
 }
 
-# ניהול Session State להתחברות
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
     st.session_state["user_info"] = None
@@ -46,7 +45,6 @@ if "logged_in" not in st.session_state:
 # --- מסך התחברות ---
 if not st.session_state["logged_in"]:
     st.title("🔑 התחברות למערכת הנוכחות")
-    
     username = st.text_input("שם משתמש").strip().lower()
     password = st.text_input("סיסמה", type="password")
     
@@ -59,7 +57,6 @@ if not st.session_state["logged_in"]:
             st.error("שם משתמש או סיסמה שגויים")
     st.stop()
 
-# --- המשתמש מחובר ---
 user = st.session_state["user_info"]
 
 st.sidebar.write(f"שלום, **{user['name']}**")
@@ -68,25 +65,26 @@ if st.sidebar.button("התנתק"):
     st.session_state["user_info"] = None
     st.rerun()
 
-# תפריט ניווט
 tabs = ["⏰ דיווח נוכחות"]
 if user["role"] == "admin":
     tabs.append("📊 דוח מנהל חודשי")
 
 selected_tab = st.radio("ניווט", tabs, horizontal=True, label_visibility="collapsed")
 
-# --- לשונית 1: דיווח נוכחות (עובדים) ---
+# --- לשונית 1: דיווח נוכחות ---
 if selected_tab == "⏰ דיווח נוכחות":
     st.title("⏰ דיווח נוכחות")
-    now_str = datetime.now().strftime('%d/%m/%Y %H:%M')
-    st.subheader(f"תאריך ושעה: {now_str}")
+    
+    # חישוב השעה הנוכחית לפי שעון ישראל
+    now = datetime.now(ISRAEL_TZ)
+    st.subheader(f"תאריך ושעה: {now.strftime('%d/%m/%Y %H:%M')}")
     st.divider()
 
     col1, col2 = st.columns(2)
     
     with col1:
         if st.button("🟢 כניסה לעבודה", use_container_width=True, type="primary"):
-            now = datetime.now()
+            now = datetime.now(ISRAEL_TZ)
             row = [
                 now.strftime("%Y-%m-%d"),
                 user["name"],
@@ -99,7 +97,7 @@ if selected_tab == "⏰ דיווח נוכחות":
 
     with col2:
         if st.button("🔴 יציאה מעבודה", use_container_width=True):
-            now = datetime.now()
+            now = datetime.now(ISRAEL_TZ)
             row = [
                 now.strftime("%Y-%m-%d"),
                 user["name"],
