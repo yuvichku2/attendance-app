@@ -33,9 +33,14 @@ except Exception as e:
 
 # --- ניהול משתמשים ---
 USERS = {
-    "israel": {"name": "ישראל ישראלי", "pass": "1234", "role": "employee"},
-    "dana": {"name": "דנה לוי", "pass": "1234", "role": "employee"},
-    "admin": {"name": "מנהל מערכת", "pass": "admin123", "role": "admin"}
+    "yuval": {"name": "יובל", "pass": "1234", "role": "admin"},
+    "sara": {"name": "שרה", "pass": "1234", "role": "admin"},
+    "yoel": {"name": "יואל", "pass": "1234", "role": "admin"},
+    "efrat": {"name": "אפרת", "pass": "1234", "role": "employee"},
+    "tali": {"name": "טלי", "pass": "1234", "role": "employee"},
+    "hai": {"name": "חי", "pass": "1234", "role": "employee"},
+    "frida": {"name": "פרידה", "pass": "1234", "role": "employee"},
+    "anat": {"name": "ענת", "pass": "1234", "role": "employee"}
 }
 
 if "logged_in" not in st.session_state:
