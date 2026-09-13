@@ -55,6 +55,7 @@ USERS = {
     'yuval': {'name': 'יובל', 'pass': '1234', 'role': 'admin'},
     'sara': {'name': 'שרה', 'pass': '1234', 'role': 'admin'},
     'yoel': {'name': 'יואל', 'pass': '1234', 'role': 'admin'},
+    'atar': {'name': 'עתר', 'pass': '1234', 'role': 'employee'},
     'efrat': {'name': 'אפרת', 'pass': '1234', 'role': 'employee'},
     'tali': {'name': 'טלי', 'pass': '1234', 'role': 'employee'},
     'hai': {'name': 'חי', 'pass': '1234', 'role': 'employee'},
@@ -317,4 +318,3 @@ elif selected_tab == '📊 ריכוז שעות חודשי':
                 label=f"סה\"כ שעות עבודה בחודש עבור {emp}",
                 value=f'{tot_h:.2f} שעות',
             )
-              
