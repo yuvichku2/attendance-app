@@ -99,7 +99,7 @@ selected_tab = st.radio(
 )
 
 
-# פונקציית עזר לניתוח ימי עבודה של עובד
+# פונקציה משופרת לחישור זוגות כניסה/יציאה מרובים
 def process_employee_days(emp_df):
   emp_df = emp_df.sort_values(by=['Date', 'Timestamp'])
   daily_records = []
@@ -130,35 +130,42 @@ def process_employee_days(emp_df):
           'hours_num': 0.0,
       })
     else:
-      in_time = '-'
-      out_time = '-'
-      total_hours_str = '00:00'
-      hours_num = 0.0
+      in_times = []
+      out_times = []
+      total_seconds = 0
+      last_in_time = None
 
-      in_rows = group[group['Type'] == 'כניסה']
-      out_rows = group[group['Type'] == 'יציאה']
+      # סריקה כרונולוגית של הדיווחים באותו יום
+      for _, row in group.iterrows():
+        action_type = row['Type']
+        time_str = row['Time']
 
-      if not in_rows.empty:
-        in_time = in_rows.iloc[0]['Time'][:5]
-      if not out_rows.empty:
-        out_time = out_rows.iloc[-1]['Time'][:5]
+        if action_type == 'כניסה':
+          in_times.append(time_str[:5])
+          if last_in_time is None:
+            last_in_time = datetime.strptime(time_str, '%H:%M:%S')
+        elif action_type == 'יציאה':
+          out_times.append(time_str[:5])
+          if last_in_time is not None:
+            out_dt = datetime.strptime(time_str, '%H:%M:%S')
+            if out_dt > last_in_time:
+              total_seconds += int((out_dt - last_in_time).total_seconds())
+            last_in_time = None
 
-      if not in_rows.empty and not out_rows.empty:
-        t1 = datetime.strptime(in_rows.iloc[0]['Time'], '%H:%M:%S')
-        t2 = datetime.strptime(out_rows.iloc[-1]['Time'], '%H:%M:%S')
-        if t2 > t1:
-          diff = t2 - t1
-          total_seconds = int(diff.total_seconds())
-          hours = total_seconds // 3600
-          minutes = (total_seconds % 3600) // 60
-          total_hours_str = f'{hours:02d}:{minutes:02d}'
-          hours_num = round(total_seconds / 3600, 2)
+      # פירמוט תצוגה
+      in_display = ', '.join(in_times) if in_times else '-'
+      out_display = ', '.join(out_times) if out_times else '-'
+
+      hours = total_seconds // 3600
+      minutes = (total_seconds % 3600) // 60
+      total_hours_str = f'{hours:02d}:{minutes:02d}'
+      hours_num = round(total_seconds / 3600, 2)
 
       daily_records.append({
           'תאריך': formatted_date,
           'יום בשבוע': day_name,
-          'שעת כניסה': in_time,
-          'שעת יציאה': out_time,
+          'שעת כניסה': in_display,
+          'שעת יציאה': out_display,
           'סה"כ שעות': total_hours_str,
           'hours_num': hours_num,
       })
@@ -236,6 +243,7 @@ if selected_tab == '⏰ דיווח נוכחות':
 elif selected_tab == '📊 ריכוז שעות חודשי':
   st.title('📊 ריכוז שעות חודשי מופרד לפי עובד')
 
+  # קריאת נתונים עדכנית בכל טעינה
   data = sheet.get_all_records()
   if not data:
     st.info('אין עדיין דיווחים בגיליון.')
@@ -255,7 +263,7 @@ elif selected_tab == '📊 ריכוז שעות חודשי':
       if not employees:
         st.warning(f'אין דיווחים בחודש {selected_month}')
       else:
-        # יצירת קובץ Excel להורדה מרוכזת (גיליון לכל עובד)
+        # יצירת קובץ Excel
         excel_buffer = io.BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
           summary_rows = []
@@ -270,13 +278,11 @@ elif selected_tab == '📊 ריכוז שעות חודשי':
                 {'שם עובד': emp, "סה'כ שעות": round(tot_h, 2)}
             )
 
-            # שמירת לשונית עובד ב-Excel
             export_df = emp_rep_df[
                 ['תאריך', 'יום בשבוע', 'שעת כניסה', 'שעת יציאה', 'סה"כ שעות']
             ]
             export_df.to_excel(writer, sheet_name=emp, index=False)
 
-          # גיליון סיכום ב-Excel
           pd.DataFrame(summary_rows).to_excel(
               writer, sheet_name='ריכוז כללי', index=False
           )
@@ -291,7 +297,7 @@ elif selected_tab == '📊 ריכוז שעות חודשי':
 
         st.divider()
 
-        # הצגה בממשק: לשונית (Tab) נפרדת לכל עובד
+        # תצוגת לשוניות לפי עובדים
         st.subheader('צפייה לפי עובד:')
         emp_tabs = st.tabs(employees)
 
