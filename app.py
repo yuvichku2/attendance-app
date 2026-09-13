@@ -25,7 +25,6 @@ st.set_page_config(
 
 
 # --- חיבור ל-Google Sheets ---
-@st.cache_resource
 def get_spreadsheet():
   scopes = [
       'https://www.googleapis.com/auth/spreadsheets',
@@ -43,12 +42,6 @@ def get_spreadsheet():
   client = gspread.authorize(creds)
   return client.open('Employee_Attendance').worksheet('Logs')
 
-
-try:
-  sheet = get_spreadsheet()
-except Exception as e:
-  st.error(f'שגיאה בחיבור ל-Google Sheets: {e}')
-  st.stop()
 
 # --- ניהול משתמשים ---
 USERS = {
@@ -99,17 +92,23 @@ selected_tab = st.radio(
 )
 
 
-# פונקציה משופרת לחישור זוגות כניסה/יציאה מרובים
+# פונקציה מוגנת ומעודכנת לעיבוד ימי עבודה מרובים
 def process_employee_days(emp_df):
-  emp_df = emp_df.sort_values(by=['Date', 'Timestamp'])
+  # מיון לפי Timestamp
+  emp_df = emp_df.sort_values(by=['Timestamp'])
   daily_records = []
 
-  for date, group in emp_df.groupby('Date'):
-    day_obj = datetime.strptime(date, '%Y-%m-%d')
-    day_name = HEBREW_DAYS.get(day_obj.strftime('%A'), day_obj.strftime('%A'))
-    formatted_date = day_obj.strftime('%d/%m/%Y')
+  # מקבצים לפי תאריך מנורמל (YYYY-MM-DD)
+  for date_str, group in emp_df.groupby('Date_clean'):
+    try:
+      day_obj = datetime.strptime(date_str, '%Y-%m-%d')
+      day_name = HEBREW_DAYS.get(day_obj.strftime('%A'), day_obj.strftime('%A'))
+      formatted_date = day_obj.strftime('%d/%m/%Y')
+    except Exception:
+      formatted_date = str(date_str)
+      day_name = '-'
 
-    types = group['Type'].tolist()
+    types = [str(t).strip() for t in group['Type'].tolist()]
 
     if 'חופשה' in types:
       daily_records.append({
@@ -135,26 +134,41 @@ def process_employee_days(emp_df):
       total_seconds = 0
       last_in_time = None
 
-      # סריקה כרונולוגית של הדיווחים באותו יום
       for _, row in group.iterrows():
-        action_type = row['Type']
-        time_str = row['Time']
+        action_type = str(row['Type']).strip()
+        t_str = str(row['Time']).strip()
+
+        # חיתוך שניות במידה וקיים (HH:MM:SS -> HH:MM)
+        display_time = t_str[:5] if len(t_str) >= 5 else t_str
 
         if action_type == 'כניסה':
-          in_times.append(time_str[:5])
-          if last_in_time is None:
-            last_in_time = datetime.strptime(time_str, '%H:%M:%S')
+          in_times.append(display_time)
+          # המרה לחישוב
+          try:
+            last_in_time = datetime.strptime(t_str, '%H:%M:%S')
+          except ValueError:
+            try:
+              last_in_time = datetime.strptime(t_str, '%H:%M')
+            except ValueError:
+              last_in_time = None
+
         elif action_type == 'יציאה':
-          out_times.append(time_str[:5])
+          out_times.append(display_time)
           if last_in_time is not None:
-            out_dt = datetime.strptime(time_str, '%H:%M:%S')
-            if out_dt > last_in_time:
+            try:
+              out_dt = datetime.strptime(t_str, '%H:%M:%S')
+            except ValueError:
+              try:
+                out_dt = datetime.strptime(t_str, '%H:%M')
+              except ValueError:
+                out_dt = None
+
+            if out_dt and out_dt > last_in_time:
               total_seconds += int((out_dt - last_in_time).total_seconds())
             last_in_time = None
 
-      # פירמוט תצוגה
-      in_display = ', '.join(in_times) if in_times else '-'
-      out_display = ', '.join(out_times) if out_times else '-'
+      in_display = ' | '.join(in_times) if in_times else '-'
+      out_display = ' | '.join(out_times) if out_times else '-'
 
       hours = total_seconds // 3600
       minutes = (total_seconds % 3600) // 60
@@ -184,29 +198,37 @@ if selected_tab == '⏰ דיווח נוכחות':
 
   with col1:
     if st.button('🟢 כניסה לעבודה', use_container_width=True, type='primary'):
-      now = datetime.now(ISRAEL_TZ)
-      row = [
-          now.strftime('%Y-%m-%d'),
-          user['name'],
-          'כניסה',
-          now.strftime('%H:%M:%S'),
-          now.strftime('%Y-%m-%d %H:%M:%S'),
-      ]
-      sheet.append_row(row)
-      st.success(f"נרשמה כניסה בהצלחה בשעה {now.strftime('%H:%M')}")
+      try:
+        sheet = get_spreadsheet()
+        now = datetime.now(ISRAEL_TZ)
+        row = [
+            now.strftime('%Y-%m-%d'),
+            user['name'],
+            'כניסה',
+            now.strftime('%H:%M:%S'),
+            now.strftime('%Y-%m-%d %H:%M:%S'),
+        ]
+        sheet.append_row(row)
+        st.success(f"נרשמה כניסה בהצלחה בשעה {now.strftime('%H:%M')}")
+      except Exception as e:
+        st.error(f'שגיאה ברישום הדיווח: {e}')
 
   with col2:
     if st.button('🔴 יציאה מעבודה', use_container_width=True):
-      now = datetime.now(ISRAEL_TZ)
-      row = [
-          now.strftime('%Y-%m-%d'),
-          user['name'],
-          'יציאה',
-          now.strftime('%H:%M:%S'),
-          now.strftime('%Y-%m-%d %H:%M:%S'),
-      ]
-      sheet.append_row(row)
-      st.warning(f"נרשמה יציאה בהצלחה בשעה {now.strftime('%H:%M')}")
+      try:
+        sheet = get_spreadsheet()
+        now = datetime.now(ISRAEL_TZ)
+        row = [
+            now.strftime('%Y-%m-%d'),
+            user['name'],
+            'יציאה',
+            now.strftime('%H:%M:%S'),
+            now.strftime('%Y-%m-%d %H:%M:%S'),
+        ]
+        sheet.append_row(row)
+        st.warning(f"נרשמה יציאה בהצלחה בשעה {now.strftime('%H:%M')}")
+      except Exception as e:
+        st.error(f'שגיאה ברישום הדיווח: {e}')
 
   st.divider()
 
@@ -215,112 +237,142 @@ if selected_tab == '⏰ דיווח נוכחות':
 
   with col3:
     if st.button('🏖️ יום חופשה', use_container_width=True):
-      now = datetime.now(ISRAEL_TZ)
-      row = [
-          now.strftime('%Y-%m-%d'),
-          user['name'],
-          'חופשה',
-          '-',
-          now.strftime('%Y-%m-%d %H:%M:%S'),
-      ]
-      sheet.append_row(row)
-      st.info('נרשם יום חופשה בהצלחה')
+      try:
+        sheet = get_spreadsheet()
+        now = datetime.now(ISRAEL_TZ)
+        row = [
+            now.strftime('%Y-%m-%d'),
+            user['name'],
+            'חופשה',
+            '-',
+            now.strftime('%Y-%m-%d %H:%M:%S'),
+        ]
+        sheet.append_row(row)
+        st.info('נרשם יום חופשה בהצלחה')
+      except Exception as e:
+        st.error(f'שגיאה ברישום הדיווח: {e}')
 
   with col4:
     if st.button('🤒 יום מחלה', use_container_width=True):
-      now = datetime.now(ISRAEL_TZ)
-      row = [
-          now.strftime('%Y-%m-%d'),
-          user['name'],
-          'מחלה',
-          '-',
-          now.strftime('%Y-%m-%d %H:%M:%S'),
-      ]
-      sheet.append_row(row)
-      st.info('נרשם יום מחלה בהצלחה')
+      try:
+        sheet = get_spreadsheet()
+        now = datetime.now(ISRAEL_TZ)
+        row = [
+            now.strftime('%Y-%m-%d'),
+            user['name'],
+            'מחלה',
+            '-',
+            now.strftime('%Y-%m-%d %H:%M:%S'),
+        ]
+        sheet.append_row(row)
+        st.info('נרשם יום מחלה בהצלחה')
+      except Exception as e:
+        st.error(f'שגיאה ברישום הדיווח: {e}')
 
 # --- לשונית 2: ריכוז שעות חודשי מנהלי ---
 elif selected_tab == '📊 ריכוז שעות חודשי':
   st.title('📊 ריכוז שעות חודשי מופרד לפי עובד')
 
-  # קריאת נתונים עדכנית בכל טעינה
-  data = sheet.get_all_records()
+  try:
+    sheet = get_spreadsheet()
+    data = sheet.get_all_records()
+  except Exception as e:
+    st.error(f'שגיאה בטעינת הנתונים: {e}')
+    data = []
+
   if not data:
     st.info('אין עדיין דיווחים בגיליון.')
   else:
     df = pd.DataFrame(data)
 
-    if 'Timestamp' in df.columns and not df.empty:
-      df['Date_dt'] = pd.to_datetime(df['Date'])
+    if 'Date' in df.columns and not df.empty:
+      # ניקוי ונורמליזציה של התאריכים לקבוצות מדויקות
+      df['Date_dt'] = pd.to_datetime(df['Date'], errors='coerce')
+      df['Date_clean'] = df['Date_dt'].dt.strftime('%Y-%m-%d')
       df['Month'] = df['Date_dt'].dt.strftime('%Y-%m')
 
-      available_months = sorted(df['Month'].unique(), reverse=True)
-      selected_month = st.selectbox('בחר חודש לצפייה:', available_months)
+      # ניקוי רווחים משמות העובדים
+      df['Employee'] = df['Employee'].astype(str).str.strip()
 
-      month_df = df[df['Month'] == selected_month].copy()
-      employees = sorted(month_df['Employee'].unique())
-
-      if not employees:
-        st.warning(f'אין דיווחים בחודש {selected_month}')
+      available_months = sorted(df['Month'].dropna().unique(), reverse=True)
+      if not available_months:
+        st.warning('לא נמצאו תאריכים תקינים בגיליון.')
       else:
-        # יצירת קובץ Excel
-        excel_buffer = io.BytesIO()
-        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-          summary_rows = []
-          for emp in employees:
-            emp_records = process_employee_days(
-                month_df[month_df['Employee'] == emp]
-            )
-            emp_rep_df = pd.DataFrame(emp_records)
-            tot_h = sum(r['hours_num'] for r in emp_records)
+        selected_month = st.selectbox('בחר חודש לצפייה:', available_months)
 
-            summary_rows.append(
-                {'שם עובד': emp, "סה'כ שעות": round(tot_h, 2)}
-            )
+        month_df = df[df['Month'] == selected_month].copy()
+        employees = sorted(month_df['Employee'].unique())
 
-            export_df = emp_rep_df[
-                ['תאריך', 'יום בשבוע', 'שעת כניסה', 'שעת יציאה', 'סה"כ שעות']
-            ]
-            export_df.to_excel(writer, sheet_name=emp, index=False)
+        if not employees:
+          st.warning(f'אין דיווחים בחודש {selected_month}')
+        else:
+          excel_buffer = io.BytesIO()
+          with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+            summary_rows = []
+            for emp in employees:
+              emp_records = process_employee_days(
+                  month_df[month_df['Employee'] == emp]
+              )
+              emp_rep_df = pd.DataFrame(emp_records)
+              tot_h = sum(r['hours_num'] for r in emp_records)
 
-          pd.DataFrame(summary_rows).to_excel(
-              writer, sheet_name='ריכוז כללי', index=False
-          )
+              summary_rows.append(
+                  {'שם עובד': emp, "סה'כ שעות": round(tot_h, 2)}
+              )
 
-        st.download_button(
-            label=f'📥 הורד דוח Excel חודשי ({selected_month}) - עמוד לכל עובד',
-            data=excel_buffer.getvalue(),
-            file_name=f'attendance_report_{selected_month}.xlsx',
-            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            type='primary',
-        )
-
-        st.divider()
-
-        # תצוגת לשוניות לפי עובדים
-        st.subheader('צפייה לפי עובד:')
-        emp_tabs = st.tabs(employees)
-
-        for i, emp in enumerate(employees):
-          with emp_tabs[i]:
-            emp_records = process_employee_days(
-                month_df[month_df['Employee'] == emp]
-            )
-            emp_rep_df = pd.DataFrame(emp_records)
-            tot_h = sum(r['hours_num'] for r in emp_records)
-
-            st.dataframe(
-                emp_rep_df[[
+              if not emp_rep_df.empty:
+                export_df = emp_rep_df[[
                     'תאריך',
                     'יום בשבוע',
                     'שעת כניסה',
                     'שעת יציאה',
                     'סה"כ שעות',
-                ]],
-                use_container_width=True,
+                ]]
+                export_df.to_excel(writer, sheet_name=emp, index=False)
+
+            pd.DataFrame(summary_rows).to_excel(
+                writer, sheet_name='ריכוז כללי', index=False
             )
 
-            st.metric(
-                label=f"סה\"כ שעות עבודה בחודש עבור {emp}",
-                value=f'{tot_h:.2f} שעות',
-            )
+          st.download_button(
+              label=(
+                  f'📥 הורד דוח Excel חודשי ({selected_month}) - עמוד לכל'
+                  ' עובד'
+              ),
+              data=excel_buffer.getvalue(),
+              file_name=f'attendance_report_{selected_month}.xlsx',
+              mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+              type='primary',
+          )
+
+          st.divider()
+
+          st.subheader('צפייה לפי עובד:')
+          emp_tabs = st.tabs(employees)
+
+          for i, emp in enumerate(employees):
+            with emp_tabs[i]:
+              emp_records = process_employee_days(
+                  month_df[month_df['Employee'] == emp]
+              )
+              emp_rep_df = pd.DataFrame(emp_records)
+              tot_h = sum(r['hours_num'] for r in emp_records)
+
+              if not emp_rep_df.empty:
+                st.dataframe(
+                    emp_rep_df[[
+                        'תאריך',
+                        'יום בשבוע',
+                        'שעת כניסה',
+                        'שעת יציאה',
+                        'סה"כ שעות',
+                    ]],
+                    use_container_width=True,
+                )
+              else:
+                st.info('אין נתונים להצגה.')
+
+              st.metric(
+                  label=f"סה\"כ שעות עבודה בחודש עבור {emp}",
+                  value=f'{tot_h:.2f} שעות',
+              )
